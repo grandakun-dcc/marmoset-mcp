@@ -383,10 +383,19 @@ def _remove_state():
 def _start_server(port):
     global _server, _port
     srv = _Server(("127.0.0.1", port), _Handler)
-    threading.Thread(target=srv.serve_forever, kwargs={"poll_interval": 0.5},
-                     daemon=True, name="toolbag-mcp-http").start()
+    srv.timeout = 0.5
+    srv.stop_event = threading.Event()
+
+    def _serve():
+        # Toolbag 5.007's embedded Python can stall in serve_forever's selector even when
+        # the listening socket is ready. handle_request uses the socket timeout directly.
+        while not srv.stop_event.is_set():
+            srv.handle_request()
+
+    srv.worker = threading.Thread(target=_serve, daemon=True, name="toolbag-mcp-http")
     _server = srv
     _port = port
+    srv.worker.start()
     STATE["port"] = port
     _write_state()
     _lbl_status.text = "Listening on 127.0.0.1:%d" % port
@@ -400,9 +409,12 @@ def _stop_server(window_alive=True):
     _remove_state()
     _fail_pending("the plugin was stopped")
     if srv is not None:
+        srv.stop_event.set()
+
         def _close():
-            srv.shutdown()
+            srv.worker.join(1.5)
             srv.server_close()
+
         threading.Thread(target=_close, daemon=True).start()
         if window_alive:
             _lbl_status.text = "Stopped"
