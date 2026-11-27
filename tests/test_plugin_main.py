@@ -92,6 +92,12 @@ def test_state_file_status_and_catalogue(plugin):
     assert status == 200 and "scene.info" in payload["actions"]
 
 
+def test_server_uses_interruptible_request_loop(plugin):
+    assert plugin._server.timeout == 0.5
+    assert isinstance(plugin._server.stop_event, threading.Event)
+    assert plugin._server.worker.is_alive()
+
+
 def test_requests_without_the_right_headers_are_refused(plugin):
     assert _request(plugin, "GET", "/", token="wrong")[0] == 403
     assert _request(plugin, "GET", "/", headers={"X-Toolbag-MCP": "0"})[0] == 403
